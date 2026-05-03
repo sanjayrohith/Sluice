@@ -12,7 +12,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "migrate": "tsx src/db/migrate.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
