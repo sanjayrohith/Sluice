@@ -1,26 +1,18 @@
 sources:
+  - id: github
+    provider: github
+    secret_env: GITHUB_WEBHOOK_SECRET
+    max_body_bytes: 1048576
+    destinations: []
   - id: stripe
     provider: stripe
     secret_env: STRIPE_WEBHOOK_SECRET
     dedup_path: $.id
-    destinations: [billing]
-  - id: github
-    provider: github
-    secret_env: GITHUB_WEBHOOK_SECRET
-    dedup_path: $.id
-    destinations: [analytics]
+    destinations: []
   - id: razorpay
     provider: razorpay
     secret_env: RAZORPAY_WEBHOOK_SECRET
     dedup_path: $.payload.payment.entity.id
-    destinations: [billing, analytics]
+    destinations: []
 
-destinations:
-  - id: billing
-    url: https://billing.example.com/webhooks
-    concurrency: 10
-    rps: 20
-  - id: analytics
-    url: https://analytics.example.com/webhooks
-    concurrency: 5
-    rps: 10
+destinations: []

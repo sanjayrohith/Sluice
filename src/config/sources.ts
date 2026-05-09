@@ -16,6 +16,7 @@ const sourceSchema = z.object({
   secret_env: z.string().min(1),
   dedup_path: z.string().min(1).optional(),
   destinations: z.array(z.string().min(1)).default([]),
+  max_body_bytes: z.number().int().positive().optional(),
 });
 
 const configSchema = z.object({
