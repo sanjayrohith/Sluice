@@ -1,10 +1,13 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify from "fastify";
 
 import { logger } from "../lib/logger.js";
+import { registerRawBody } from "./rawBody.js";
 
-export function buildServer(): FastifyInstance {
-  return Fastify({
+export function buildServer() {
+  const app = Fastify({
     loggerInstance: logger,
     disableRequestLogging: true,
   });
+  registerRawBody(app);
+  return app;
 }
