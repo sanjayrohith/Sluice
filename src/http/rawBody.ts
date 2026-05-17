@@ -1,16 +1,24 @@
 import type { FastifyInstance } from "fastify";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { loadEnv } from "../config/env.js";
 import { loadSourcesConfig } from "../config/sources.js";
+import type { SourcesConfig } from "../config/sources.js";
 
-export function registerRawBody(app: FastifyInstance<any, any, any, any>): void {
+export function registerRawBody(
+  app: FastifyInstance<any, any, any, any>,
+  configuredSources?: SourcesConfig,
+): void {
   const env = loadEnv();
-  let sourcesConfig: ReturnType<typeof loadSourcesConfig> | undefined;
+  let sourcesConfig: SourcesConfig | undefined = configuredSources;
 
-  try {
-    sourcesConfig = loadSourcesConfig();
-  } catch {
-    // The source file is optional while the server is being bootstrapped.
+  if (!sourcesConfig) {
+    try {
+      sourcesConfig = loadSourcesConfig();
+    } catch {
+      // The source file is optional while the server is being bootstrapped.
+    }
   }
 
   app.decorateRequest("rawBody");
