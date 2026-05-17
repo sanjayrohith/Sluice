@@ -6,6 +6,8 @@ import { loadSourcesConfig, type SourcesConfig } from "../../config/sources.js";
 import { loadEnv } from "../../config/env.js";
 import { getVerifier } from "../../verify/registry.js";
 import { recordRejection } from "../../db/repositories/rejectedEvents.js";
+import { insertEvent } from "../../db/repositories/events.js";
+import { extractDedupKey } from "../../ingress/dedupKey.js";
 import { normalizeHeaders } from "../../ingress/headers.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
@@ -46,7 +48,14 @@ export function registerIngressRoutes(
       });
       return reply.code(401).send({ error: result.reason });
     }
-    return reply.code(200).send({ accepted: true });
+
+    const eventId = await insertEvent({
+      sourceId: source.id,
+      dedupKey: extractDedupKey(request.rawBody, source.dedup_path),
+      rawBody: request.rawBody,
+      headers,
+    });
+    return reply.code(200).send({ event_id: eventId, duplicate: eventId === null });
   });
 }
 
