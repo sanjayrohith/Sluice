@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { loadSourcesConfig, type SourcesConfig } from "../../config/sources.js";
 import { loadEnv } from "../../config/env.js";
 import { getVerifier } from "../../verify/registry.js";
 import { recordRejection } from "../../db/repositories/rejectedEvents.js";
+import { normalizeHeaders } from "../../ingress/headers.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
 import "../../verify/providers/stripe.js";
@@ -27,12 +30,7 @@ export function registerIngressRoutes(
       return reply.code(401).send({ error: "missing_secret" });
     }
 
-    const headers = Object.fromEntries(
-      Object.entries(request.headers).map(([key, value]) => [
-        key,
-        Array.isArray(value) ? value[0] : value,
-      ]),
-    );
+    const headers = normalizeHeaders(request.headers);
     const result = getVerifier(source.provider)({
       rawBody: request.rawBody,
       headers,
