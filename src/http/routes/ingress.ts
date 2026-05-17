@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { loadSourcesConfig, type SourcesConfig } from "../../config/sources.js";
 import { loadEnv } from "../../config/env.js";
 import { getVerifier } from "../../verify/registry.js";
+import { recordRejection } from "../../db/repositories/rejectedEvents.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
 import "../../verify/providers/stripe.js";
@@ -39,6 +40,12 @@ export function registerIngressRoutes(
       toleranceSeconds: loadEnv().SIGNATURE_TOLERANCE_SECONDS,
     });
     if (!result.ok) {
+      await recordRejection({
+        sourceId: source.id,
+        reason: result.reason,
+        rawBody: request.rawBody,
+        headers,
+      });
       return reply.code(401).send({ error: result.reason });
     }
     return reply.code(200).send({ accepted: true });
