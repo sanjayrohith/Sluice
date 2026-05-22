@@ -9,6 +9,7 @@ import { recordRejection } from "../../db/repositories/rejectedEvents.js";
 import { insertEvent } from "../../db/repositories/events.js";
 import { extractDedupKey } from "../../ingress/dedupKey.js";
 import { normalizeHeaders } from "../../ingress/headers.js";
+import { logDomainEvent } from "../../lib/events.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
 import "../../verify/providers/stripe.js";
@@ -48,6 +49,10 @@ export function registerIngressRoutes(
         rawBody: request.rawBody,
         headers,
       });
+      logDomainEvent("ingress.rejected", {
+        source_id: source.id,
+        reason: result.reason,
+      });
       return reply.code(401).send({ error: result.reason });
     }
 
@@ -57,6 +62,13 @@ export function registerIngressRoutes(
       rawBody: request.rawBody,
       headers,
     });
+    logDomainEvent(
+      eventId === null ? "ingress.duplicate" : "ingress.accepted",
+      {
+        source_id: source.id,
+        event_id: eventId ?? undefined,
+      },
+    );
     return reply.code(200).send({ event_id: eventId, duplicate: eventId === null });
   });
 }
