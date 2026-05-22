@@ -2,10 +2,22 @@
  * Extract a scalar value from a webhook payload using the supported JSONPath
  * subset: $.field.nested[0].field.
  */
+const parsedPathCache = new Map<string, Array<string | number> | null>();
+
+function getParsedPath(path: string): Array<string | number> | null {
+  const cached = parsedPathCache.get(path);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const parsed = parsePath(path);
+  parsedPathCache.set(path, parsed);
+  return parsed;
+}
+
 export function extractDedupKey(rawBody: Buffer, path?: string): string | null {
   if (!path) return null;
 
-  const segments = parsePath(path);
+  const segments = getParsedPath(path);
   if (!segments) return null;
 
   let value: unknown;

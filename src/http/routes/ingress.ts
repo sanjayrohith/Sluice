@@ -21,6 +21,8 @@ export function registerIngressRoutes(
   app: FastifyInstance<any, any, any, any>,
   config = tryLoadSources(),
 ): void {
+  const toleranceSeconds = loadEnv().SIGNATURE_TOLERANCE_SECONDS;
+
   app.post<{ Params: IngressParams }>("/in/:source_id", async (request, reply) => {
     const source = config?.sources.get(request.params.source_id);
     if (!source) {
@@ -37,7 +39,7 @@ export function registerIngressRoutes(
       rawBody: request.rawBody,
       headers,
       secret,
-      toleranceSeconds: loadEnv().SIGNATURE_TOLERANCE_SECONDS,
+      toleranceSeconds,
     });
     if (!result.ok) {
       await recordRejection({
