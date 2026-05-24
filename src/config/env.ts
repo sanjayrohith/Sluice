@@ -8,6 +8,7 @@ const envSchema = z.object({
     .default("info"),
   MAX_BODY_BYTES: z.coerce.number().int().positive().default(1_048_576),
   SIGNATURE_TOLERANCE_SECONDS: z.coerce.number().int().nonnegative().default(300),
+  DISPATCH_BATCH_SIZE: z.coerce.number().int().positive().default(20),
   ADMIN_TOKEN: z.string().min(1),
 });
 
