@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "worker": "tsx src/worker.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
