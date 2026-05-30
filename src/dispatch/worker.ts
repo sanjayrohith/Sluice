@@ -1,15 +1,20 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
 import { query } from "../db/pool.js";
-import { markSucceeded } from "../db/repositories/events.js";
+import { markSucceeded, scheduleRetry } from "../db/repositories/events.js";
 import { buildForwardedHeaders, deliver } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
+import { calculateBackoff } from "./backoff.js";
+import { classifyOutcome } from "./outcome.js";
 
 export interface WorkerOptions {
   sourcesConfig: SourcesConfig;
   batchSize?: number;
   pollIntervalMs?: number;
+  maxAttempts?: number;
+  backoffBaseMs?: number;
+  backoffCapMs?: number;
   claim?: (batchSize: number) => Promise<ClaimedEvent[]>;
   deliver?: typeof deliver;
 }
@@ -19,7 +24,9 @@ export class DispatcherWorker {
   private wakeWaiter: (() => void) | undefined;
   private readonly resolveDestination;
   private readonly sourcesConfig: SourcesConfig;
-  private readonly options: Required<Pick<WorkerOptions, "batchSize" | "pollIntervalMs">>;
+  private readonly options: Required<
+    Pick<WorkerOptions, "batchSize" | "pollIntervalMs" | "maxAttempts" | "backoffBaseMs" | "backoffCapMs">
+  >;
   private readonly claim;
   private readonly send;
 
@@ -29,6 +36,9 @@ export class DispatcherWorker {
     this.options = {
       batchSize: options.batchSize ?? 20,
       pollIntervalMs: options.pollIntervalMs ?? 1_000,
+      maxAttempts: options.maxAttempts ?? 12,
+      backoffBaseMs: options.backoffBaseMs ?? 5_000,
+      backoffCapMs: options.backoffCapMs ?? 6 * 60 * 60 * 1_000,
     };
     this.claim = options.claim ?? claimEvents;
     this.send = options.deliver ?? deliver;
@@ -73,9 +83,21 @@ export class DispatcherWorker {
       );
     }
 
-    const succeeded = results.every((result) => result.status >= 200 && result.status < 300);
+    const outcomes = results.map(classifyOutcome);
+    const succeeded = outcomes.every((outcome) => outcome === "success");
     if (succeeded) {
       await markSucceeded(event.id);
+    } else if (
+      outcomes.some((outcome) => outcome === "retryable") &&
+      event.attempts < this.options.maxAttempts
+    ) {
+      await scheduleRetry(
+        event.id,
+        calculateBackoff(event.attempts, {
+          baseMs: this.options.backoffBaseMs,
+          capMs: this.options.backoffCapMs,
+        }),
+      );
     } else {
       await query(
         "UPDATE events SET status = 'pending', locked_at = NULL WHERE id = $1 AND status = 'running'",
@@ -115,6 +137,9 @@ export async function runWorker(sourcesConfig: SourcesConfig): Promise<void> {
     sourcesConfig,
     batchSize: env.DISPATCH_BATCH_SIZE,
     pollIntervalMs: env.POLL_INTERVAL_MS,
+    maxAttempts: env.MAX_ATTEMPTS,
+    backoffBaseMs: env.BACKOFF_BASE_MS,
+    backoffCapMs: env.BACKOFF_CAP_MS,
   });
   await worker.run();
 }

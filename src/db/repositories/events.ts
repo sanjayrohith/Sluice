@@ -27,3 +27,14 @@ export async function markSucceeded(eventId: string | number): Promise<void> {
     [eventId],
   );
 }
+
+export async function scheduleRetry(eventId: string | number, delayMs: number): Promise<void> {
+  await query(
+    `UPDATE events
+     SET status = 'pending',
+         next_retry_at = now() + ($2 * interval '1 millisecond'),
+         locked_at = NULL
+     WHERE id = $1 AND status = 'running'`,
+    [eventId, delayMs],
+  );
+}
