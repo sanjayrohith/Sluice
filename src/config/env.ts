@@ -10,6 +10,9 @@ const envSchema = z.object({
   SIGNATURE_TOLERANCE_SECONDS: z.coerce.number().int().nonnegative().default(300),
   DISPATCH_BATCH_SIZE: z.coerce.number().int().positive().default(20),
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
+  BACKOFF_BASE_MS: z.coerce.number().int().positive().default(5_000),
+  BACKOFF_CAP_MS: z.coerce.number().int().positive().default(6 * 60 * 60 * 1_000),
+  MAX_ATTEMPTS: z.coerce.number().int().positive().default(12),
   ADMIN_TOKEN: z.string().min(1),
 });
 
