@@ -1,6 +1,7 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
 import { query } from "../db/pool.js";
+import { markSucceeded } from "../db/repositories/events.js";
 import { buildForwardedHeaders, deliver } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
@@ -73,10 +74,14 @@ export class DispatcherWorker {
     }
 
     const succeeded = results.every((result) => result.status >= 200 && result.status < 300);
-    await query(
-      "UPDATE events SET status = $2, locked_at = NULL WHERE id = $1 AND status = 'running'",
-      [event.id, succeeded ? "succeeded" : "pending"],
-    );
+    if (succeeded) {
+      await markSucceeded(event.id);
+    } else {
+      await query(
+        "UPDATE events SET status = 'pending', locked_at = NULL WHERE id = $1 AND status = 'running'",
+        [event.id],
+      );
+    }
   }
 
   private resolveSource(sourceId: string) {

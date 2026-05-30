@@ -18,3 +18,12 @@ export async function insertEvent(input: {
 
   return result.rows[0] ? Number(result.rows[0].id) : null;
 }
+
+export async function markSucceeded(eventId: string | number): Promise<void> {
+  await query(
+    `UPDATE events
+     SET status = 'succeeded', locked_at = NULL, completed_at = now()
+     WHERE id = $1 AND status = 'running'`,
+    [eventId],
+  );
+}
