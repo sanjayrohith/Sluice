@@ -1,0 +1,2 @@
+ALTER TABLE events
+  ADD COLUMN completed_at TIMESTAMPTZ;
