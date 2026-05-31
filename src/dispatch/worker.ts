@@ -20,6 +20,17 @@ export interface WorkerOptions {
   deliver?: typeof deliver;
 }
 
+export function shouldDeadLetter(
+  outcomes: Array<"success" | "retryable" | "permanent">,
+  attempts: number,
+  maxAttempts: number,
+): boolean {
+  return (
+    outcomes.some((outcome) => outcome === "permanent") ||
+    (outcomes.some((outcome) => outcome === "retryable") && attempts >= maxAttempts)
+  );
+}
+
 export class DispatcherWorker {
   private stopping = false;
   private wakeWaiter: (() => void) | undefined;
@@ -101,7 +112,7 @@ export class DispatcherWorker {
     const succeeded = outcomes.every((outcome) => outcome === "success");
     if (succeeded) {
       await markSucceeded(event.id);
-    } else if (outcomes.some((outcome) => outcome === "permanent")) {
+    } else if (shouldDeadLetter(outcomes, event.attempts, this.options.maxAttempts)) {
       await markDead(event.id, failureReason(results[outcomes.indexOf("permanent")]));
     } else if (
       outcomes.some((outcome) => outcome === "retryable") &&
