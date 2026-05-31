@@ -6,6 +6,7 @@ import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
 import { calculateBackoff } from "./backoff.js";
 import { classifyOutcome } from "./outcome.js";
+import { reapStaleEvents } from "./reaper.js";
 
 export interface WorkerOptions {
   sourcesConfig: SourcesConfig;
@@ -14,6 +15,7 @@ export interface WorkerOptions {
   maxAttempts?: number;
   backoffBaseMs?: number;
   backoffCapMs?: number;
+  lockTimeoutMs?: number;
   claim?: (batchSize: number) => Promise<ClaimedEvent[]>;
   deliver?: typeof deliver;
 }
@@ -24,7 +26,10 @@ export class DispatcherWorker {
   private readonly resolveDestination;
   private readonly sourcesConfig: SourcesConfig;
   private readonly options: Required<
-    Pick<WorkerOptions, "batchSize" | "pollIntervalMs" | "maxAttempts" | "backoffBaseMs" | "backoffCapMs">
+    Pick<
+      WorkerOptions,
+      "batchSize" | "pollIntervalMs" | "maxAttempts" | "backoffBaseMs" | "backoffCapMs" | "lockTimeoutMs"
+    >
   >;
   private readonly claim;
   private readonly send;
@@ -38,22 +43,32 @@ export class DispatcherWorker {
       maxAttempts: options.maxAttempts ?? 12,
       backoffBaseMs: options.backoffBaseMs ?? 5_000,
       backoffCapMs: options.backoffCapMs ?? 6 * 60 * 60 * 1_000,
+      lockTimeoutMs: options.lockTimeoutMs ?? 5 * 60 * 1_000,
     };
     this.claim = options.claim ?? claimEvents;
     this.send = options.deliver ?? deliver;
   }
 
   async run(): Promise<void> {
-    while (!this.stopping) {
-      const events = await this.claim(this.options.batchSize);
-      if (events.length === 0) {
-        await this.waitForWork();
-        continue;
-      }
+    const reaperInterval = setInterval(
+      () => void reapStaleEvents(this.options.lockTimeoutMs),
+      Math.max(1_000, Math.floor(this.options.lockTimeoutMs / 2)),
+    );
 
-      for (const event of events) {
-        await this.processEvent(event);
+    try {
+      while (!this.stopping) {
+        const events = await this.claim(this.options.batchSize);
+        if (events.length === 0) {
+          await this.waitForWork();
+          continue;
+        }
+
+        for (const event of events) {
+          await this.processEvent(event);
+        }
       }
+    } finally {
+      clearInterval(reaperInterval);
     }
   }
 
@@ -143,6 +158,7 @@ export async function runWorker(sourcesConfig: SourcesConfig): Promise<void> {
     maxAttempts: env.MAX_ATTEMPTS,
     backoffBaseMs: env.BACKOFF_BASE_MS,
     backoffCapMs: env.BACKOFF_CAP_MS,
+    lockTimeoutMs: env.LOCK_TIMEOUT_MS,
   });
   await worker.run();
 }

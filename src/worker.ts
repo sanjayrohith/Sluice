@@ -10,6 +10,7 @@ const worker = new DispatcherWorker({
   maxAttempts: env.MAX_ATTEMPTS,
   backoffBaseMs: env.BACKOFF_BASE_MS,
   backoffCapMs: env.BACKOFF_CAP_MS,
+  lockTimeoutMs: env.LOCK_TIMEOUT_MS,
 });
 
 const stopping = new Promise<void>((resolve) => {

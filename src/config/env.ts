@@ -13,6 +13,7 @@ const envSchema = z.object({
   BACKOFF_BASE_MS: z.coerce.number().int().positive().default(5_000),
   BACKOFF_CAP_MS: z.coerce.number().int().positive().default(6 * 60 * 60 * 1_000),
   MAX_ATTEMPTS: z.coerce.number().int().positive().default(12),
+  LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(5 * 60 * 1_000),
   ADMIN_TOKEN: z.string().min(1),
 });
 
