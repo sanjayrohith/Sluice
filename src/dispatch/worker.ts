@@ -1,7 +1,6 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
-import { query } from "../db/pool.js";
-import { markSucceeded, scheduleRetry } from "../db/repositories/events.js";
+import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/events.js";
 import { buildForwardedHeaders, deliver } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
@@ -87,6 +86,8 @@ export class DispatcherWorker {
     const succeeded = outcomes.every((outcome) => outcome === "success");
     if (succeeded) {
       await markSucceeded(event.id);
+    } else if (outcomes.some((outcome) => outcome === "permanent")) {
+      await markDead(event.id, failureReason(results[outcomes.indexOf("permanent")]));
     } else if (
       outcomes.some((outcome) => outcome === "retryable") &&
       event.attempts < this.options.maxAttempts
@@ -99,10 +100,7 @@ export class DispatcherWorker {
         }),
       );
     } else {
-      await query(
-        "UPDATE events SET status = 'pending', locked_at = NULL WHERE id = $1 AND status = 'running'",
-        [event.id],
-      );
+      await markDead(event.id, failureReason(results[0]));
     }
   }
 
@@ -129,6 +127,11 @@ export class DispatcherWorker {
       };
     });
   }
+}
+
+function failureReason(result: { status: number; error?: string }): string {
+  if (result.error) return result.error;
+  return `http_${result.status}`;
 }
 
 export async function runWorker(sourcesConfig: SourcesConfig): Promise<void> {

@@ -38,3 +38,12 @@ export async function scheduleRetry(eventId: string | number, delayMs: number): 
     [eventId, delayMs],
   );
 }
+
+export async function markDead(eventId: string | number, failedReason: string): Promise<void> {
+  await query(
+    `UPDATE events
+     SET status = 'dead', failed_reason = $2, locked_at = NULL
+     WHERE id = $1 AND status = 'running'`,
+    [eventId, failedReason],
+  );
+}
