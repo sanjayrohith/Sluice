@@ -1,6 +1,7 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
 import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/events.js";
+import { recordAttempt } from "../db/repositories/attempts.js";
 import { buildForwardedHeaders, deliver } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
@@ -95,17 +96,28 @@ export class DispatcherWorker {
 
     for (const destinationId of source.destinations) {
       const destination = this.resolveDestination(destinationId);
-      results.push(
-        await this.send({
-          url: destination.url,
-          body: event.raw_body,
-          headers: buildForwardedHeaders(event.headers, {
-            eventId: event.id,
-            attempt: event.attempts,
-            source: event.source_id,
-          }),
-        }),
-      );
+      const requestHeaders = buildForwardedHeaders(event.headers, {
+        eventId: event.id,
+        attempt: event.attempts,
+        source: event.source_id,
+      });
+      const result = await this.send({
+        url: destination.url,
+        body: event.raw_body,
+        headers: requestHeaders,
+      });
+      await recordAttempt({
+        eventId: event.id,
+        attemptNumber: event.attempts,
+        destinationId,
+        requestHeaders,
+        responseStatus: result.status,
+        responseHeaders: result.headers,
+        responseBody: result.bodySnippet,
+        durationMs: result.durationMs,
+        error: result.error,
+      });
+      results.push(result);
     }
 
     const outcomes = results.map(classifyOutcome);
