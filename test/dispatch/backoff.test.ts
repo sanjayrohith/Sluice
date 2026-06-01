@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateBackoff } from "../../src/dispatch/backoff.js";
+import { calculateBackoff, retryAfterDelayMs } from "../../src/dispatch/backoff.js";
 
 describe("calculateBackoff", () => {
   it("keeps jitter between 0.5x and 1x of the uncapped ideal", () => {
@@ -36,5 +36,11 @@ describe("calculateBackoff", () => {
 
     expect(new Set(values).size).toBeGreaterThan(900);
     expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(5_000);
+  });
+
+  it("parses and caps Retry-After seconds and HTTP dates", () => {
+    expect(retryAfterDelayMs({ "retry-after": "3" }, 0, 2_000)).toBe(2_000);
+    expect(retryAfterDelayMs({ "Retry-After": "Thu, 01 Jan 1970 00:00:05 GMT" }, 0)).toBe(5_000);
+    expect(retryAfterDelayMs({ "retry-after": "invalid" }, 0)).toBeNull();
   });
 });
