@@ -14,3 +14,21 @@ export function calculateBackoff(attempts: number, options: BackoffOptions = {})
   const idealMs = Math.min(capMs, baseMs * 2 ** Math.max(0, attempts));
   return idealMs * (0.5 + random() * 0.5);
 }
+
+export function retryAfterDelayMs(
+  headers: Record<string, string>,
+  nowMs = Date.now(),
+  capMs = DEFAULT_CAP_MS,
+): number | null {
+  const value = Object.entries(headers).find(([name]) => name.toLowerCase() === "retry-after")?.[1];
+  if (value === undefined) return null;
+
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(capMs, seconds * 1_000);
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return null;
+  return Math.min(capMs, Math.max(0, timestamp - nowMs));
+}

@@ -5,7 +5,7 @@ import { recordAttempt } from "../db/repositories/attempts.js";
 import { buildForwardedHeaders, deliver } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
-import { calculateBackoff } from "./backoff.js";
+import { calculateBackoff, retryAfterDelayMs } from "./backoff.js";
 import { classifyOutcome } from "./outcome.js";
 import { reapStaleEvents } from "./reaper.js";
 
@@ -130,12 +130,17 @@ export class DispatcherWorker {
       outcomes.some((outcome) => outcome === "retryable") &&
       event.attempts < this.options.maxAttempts
     ) {
+      const retryAfter = results
+        .filter((result) => result.status === 429 || result.status === 503)
+        .map((result) => retryAfterDelayMs(result.headers, Date.now(), this.options.backoffCapMs))
+        .find((delay) => delay !== null);
       await scheduleRetry(
         event.id,
-        calculateBackoff(event.attempts, {
-          baseMs: this.options.backoffBaseMs,
-          capMs: this.options.backoffCapMs,
-        }),
+        retryAfter ??
+          calculateBackoff(event.attempts, {
+            baseMs: this.options.backoffBaseMs,
+            capMs: this.options.backoffCapMs,
+          }),
       );
     } else {
       await markDead(event.id, failureReason(results[0]));
