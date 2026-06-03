@@ -8,6 +8,7 @@ const destinationSchema = z.object({
   url: z.string().url(),
   concurrency: z.number().int().positive().default(10),
   rps: z.number().positive().default(10),
+  timeout_ms: z.number().int().positive().default(30_000),
 });
 
 const sourceSchema = z.object({

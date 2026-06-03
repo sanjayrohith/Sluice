@@ -14,6 +14,7 @@ export interface DeliveryInput {
   url: string;
   body: Buffer;
   headers?: Record<string, string>;
+  timeoutMs?: number;
 }
 
 export interface DeliveryMetadata {
@@ -49,12 +50,19 @@ export function buildForwardedHeaders(
 
 export async function deliver(input: DeliveryInput): Promise<DeliveryResult> {
   const startedAt = performance.now();
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, input.timeoutMs ?? 30_000);
 
   try {
     const response = await request(input.url, {
       method: "POST",
       headers: input.headers,
       body: input.body,
+      signal: controller.signal,
     });
     const responseBody = await response.body.text();
 
@@ -70,8 +78,10 @@ export async function deliver(input: DeliveryInput): Promise<DeliveryResult> {
       headers: {},
       bodySnippet: "",
       durationMs: elapsedMs(startedAt),
-      error: error instanceof Error ? error.message : String(error),
+      error: timedOut ? "timeout" : error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

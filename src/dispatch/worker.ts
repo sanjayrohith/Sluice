@@ -147,6 +147,7 @@ export class DispatcherWorker {
         url: destination.url,
         body: event.raw_body,
         headers: requestHeaders,
+        timeoutMs: destination.timeout_ms,
       });
       await recordAttempt({
         eventId: event.id,
