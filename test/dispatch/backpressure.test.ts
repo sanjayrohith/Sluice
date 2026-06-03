@@ -9,7 +9,7 @@ describe("delivery backpressure", () => {
   let target: TargetServer;
 
   beforeAll(async () => {
-    target = await createTargetServer();
+    target = await createTargetServer(20);
   });
 
   afterAll(async () => {
