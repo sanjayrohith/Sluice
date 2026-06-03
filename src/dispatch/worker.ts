@@ -2,12 +2,14 @@ import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
 import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/events.js";
 import { recordAttempt } from "../db/repositories/attempts.js";
-import { buildForwardedHeaders, deliver } from "./deliver.js";
+import { buildForwardedHeaders, deliver, type DeliveryResult } from "./deliver.js";
 import { claimEvents, type ClaimedEvent } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
 import { calculateBackoff, retryAfterDelayMs } from "./backoff.js";
 import { classifyOutcome } from "./outcome.js";
 import { reapStaleEvents } from "./reaper.js";
+import { DestinationConcurrencyLimiter } from "./limiters/concurrency.js";
+import { DestinationRateLimiter } from "./limiters/rateLimit.js";
 
 export interface WorkerOptions {
   sourcesConfig: SourcesConfig;
@@ -45,6 +47,8 @@ export class DispatcherWorker {
   >;
   private readonly claim;
   private readonly send;
+  private readonly concurrencyLimiter: DestinationConcurrencyLimiter;
+  private readonly rateLimiter: DestinationRateLimiter;
 
   constructor(options: WorkerOptions) {
     this.sourcesConfig = options.sourcesConfig;
@@ -59,6 +63,14 @@ export class DispatcherWorker {
     };
     this.claim = options.claim ?? claimEvents;
     this.send = options.deliver ?? deliver;
+    this.concurrencyLimiter = new DestinationConcurrencyLimiter(
+      new Map(
+        [...options.sourcesConfig.destinations].map(([id, destination]) => [id, destination.concurrency]),
+      ),
+    );
+    this.rateLimiter = new DestinationRateLimiter(
+      new Map([...options.sourcesConfig.destinations].map(([id, destination]) => [id, destination.rps])),
+    );
   }
 
   async run(): Promise<void> {
@@ -75,9 +87,7 @@ export class DispatcherWorker {
           continue;
         }
 
-        for (const event of events) {
-          await this.processEvent(event);
-        }
+        await Promise.all(events.map((event) => this.processEvent(event)));
       }
     } finally {
       clearInterval(reaperInterval);
@@ -92,33 +102,9 @@ export class DispatcherWorker {
 
   private async processEvent(event: ClaimedEvent): Promise<void> {
     const source = this.resolveSource(event.source_id);
-    const results = [];
-
-    for (const destinationId of source.destinations) {
-      const destination = this.resolveDestination(destinationId);
-      const requestHeaders = buildForwardedHeaders(event.headers, {
-        eventId: event.id,
-        attempt: event.attempts,
-        source: event.source_id,
-      });
-      const result = await this.send({
-        url: destination.url,
-        body: event.raw_body,
-        headers: requestHeaders,
-      });
-      await recordAttempt({
-        eventId: event.id,
-        attemptNumber: event.attempts,
-        destinationId,
-        requestHeaders,
-        responseStatus: result.status,
-        responseHeaders: result.headers,
-        responseBody: result.bodySnippet,
-        durationMs: result.durationMs,
-        error: result.error,
-      });
-      results.push(result);
-    }
+    const results = await Promise.all(
+      source.destinations.map((destinationId) => this.processDestination(event, destinationId)),
+    );
 
     const outcomes = results.map(classifyOutcome);
     const succeeded = outcomes.every((outcome) => outcome === "success");
@@ -144,6 +130,38 @@ export class DispatcherWorker {
       );
     } else {
       await markDead(event.id, failureReason(results[0]));
+    }
+  }
+
+  private async processDestination(event: ClaimedEvent, destinationId: string): Promise<DeliveryResult> {
+    await this.rateLimiter.take(destinationId);
+    const release = await this.concurrencyLimiter.acquire(destinationId);
+    try {
+      const destination = this.resolveDestination(destinationId);
+      const requestHeaders = buildForwardedHeaders(event.headers, {
+        eventId: event.id,
+        attempt: event.attempts,
+        source: event.source_id,
+      });
+      const result = await this.send({
+        url: destination.url,
+        body: event.raw_body,
+        headers: requestHeaders,
+      });
+      await recordAttempt({
+        eventId: event.id,
+        attemptNumber: event.attempts,
+        destinationId,
+        requestHeaders,
+        responseStatus: result.status,
+        responseHeaders: result.headers,
+        responseBody: result.bodySnippet,
+        durationMs: result.durationMs,
+        error: result.error,
+      });
+      return result;
+    } finally {
+      release();
     }
   }
 
