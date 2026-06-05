@@ -148,6 +148,7 @@ export class DispatcherWorker {
       });
       await recordAttempt({
         eventId: event.event_id,
+        deliveryId: event.delivery_id,
         attemptNumber: event.attempts,
         destinationId,
         requestHeaders,

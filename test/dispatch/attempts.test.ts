@@ -15,6 +15,7 @@ describe("attempt logging", () => {
 
 describe.skipIf(!runDatabaseTests)("attempt logging database integration", () => {
   let eventId: string;
+  let deliveryId: string;
 
   beforeAll(async () => {
     await runMigrations();
@@ -23,6 +24,12 @@ describe.skipIf(!runDatabaseTests)("attempt logging database integration", () =>
       ["attempt-test", Buffer.from("{}"), "{}"],
     );
     eventId = event.rows[0]!.id;
+
+    const delivery = await query<{ id: string }>(
+      "INSERT INTO deliveries (event_id, destination_id) VALUES ($1, 'target') RETURNING id",
+      [eventId],
+    );
+    deliveryId = delivery.rows[0]!.id;
   });
 
   afterAll(async () => {
@@ -33,6 +40,7 @@ describe.skipIf(!runDatabaseTests)("attempt logging database integration", () =>
     for (const attemptNumber of [1, 2, 3]) {
       await recordAttempt({
         eventId,
+        deliveryId,
         attemptNumber,
         destinationId: "target",
         requestHeaders: { "x-sluice-attempt": String(attemptNumber) },
@@ -44,14 +52,19 @@ describe.skipIf(!runDatabaseTests)("attempt logging database integration", () =>
       });
     }
 
-    const rows = await query<{ attempt_number: number; response_status: number; error: string | null }>(
-      "SELECT attempt_number, response_status, error FROM delivery_attempts WHERE event_id = $1 ORDER BY attempt_number",
+    const rows = await query<{
+      attempt_number: number;
+      delivery_id: string;
+      response_status: number;
+      error: string | null;
+    }>(
+      "SELECT attempt_number, delivery_id, response_status, error FROM delivery_attempts WHERE event_id = $1 ORDER BY attempt_number",
       [eventId],
     );
     expect(rows.rows).toEqual([
-      { attempt_number: 1, response_status: 500, error: null },
-      { attempt_number: 2, response_status: 500, error: null },
-      { attempt_number: 3, response_status: 0, error: "connect ECONNREFUSED" },
+      { attempt_number: 1, delivery_id: deliveryId, response_status: 500, error: null },
+      { attempt_number: 2, delivery_id: deliveryId, response_status: 500, error: null },
+      { attempt_number: 3, delivery_id: deliveryId, response_status: 0, error: "connect ECONNREFUSED" },
     ]);
   });
 });
