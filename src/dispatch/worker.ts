@@ -108,7 +108,9 @@ export class DispatcherWorker {
     if (succeeded) {
       await markSucceeded(event.delivery_id);
     } else if (shouldDeadLetter(outcomes, event.attempts, this.options.maxAttempts)) {
-      await markDead(event.delivery_id, failureReason(results[outcomes.indexOf("permanent")]));
+      const permanentIndex = outcomes.indexOf("permanent");
+      const deadResult = permanentIndex >= 0 ? results[permanentIndex] : results[0];
+      await markDead(event.delivery_id, failureReason(deadResult));
     } else if (
       outcomes.some((outcome) => outcome === "retryable") &&
       event.attempts < this.options.maxAttempts
@@ -179,7 +181,8 @@ export class DispatcherWorker {
   }
 }
 
-function failureReason(result: { status: number; error?: string }): string {
+function failureReason(result?: { status: number; error?: string }): string {
+  if (!result) return "unknown";
   if (result.error) return result.error;
   return `http_${result.status}`;
 }
