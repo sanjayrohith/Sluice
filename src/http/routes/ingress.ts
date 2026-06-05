@@ -6,7 +6,7 @@ import { loadSourcesConfig, type SourcesConfig } from "../../config/sources.js";
 import { loadEnv } from "../../config/env.js";
 import { getVerifier } from "../../verify/registry.js";
 import { recordRejection } from "../../db/repositories/rejectedEvents.js";
-import { insertEvent } from "../../db/repositories/events.js";
+import { insertEventWithDeliveries } from "../../db/repositories/events.js";
 import { extractDedupKey } from "../../ingress/dedupKey.js";
 import { normalizeHeaders } from "../../ingress/headers.js";
 import { logDomainEvent } from "../../lib/events.js";
@@ -56,12 +56,12 @@ export function registerIngressRoutes(
       return reply.code(401).send({ error: result.reason });
     }
 
-    const eventId = await insertEvent({
+    const eventId = await insertEventWithDeliveries({
       sourceId: source.id,
       dedupKey: extractDedupKey(request.rawBody, source.dedup_path),
       rawBody: request.rawBody,
       headers,
-    });
+    }, source.destinations);
     logDomainEvent(
       eventId === null ? "ingress.duplicate" : "ingress.accepted",
       {

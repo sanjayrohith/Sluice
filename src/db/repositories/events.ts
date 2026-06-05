@@ -1,9 +1,5 @@
-import { query } from "../pool.js";
-
-const INSERT_EVENT_SQL = `INSERT INTO events (source_id, dedup_key, raw_body, headers)
-     VALUES ($1, $2, $3, $4::jsonb)
-     ON CONFLICT (source_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
-     RETURNING id`;
+import { query, withTransaction } from "../pool.js";
+import { insertDeliveries } from "./deliveries.js";
 
 export async function insertEvent(input: {
   sourceId: string;
@@ -11,12 +7,33 @@ export async function insertEvent(input: {
   rawBody: Buffer;
   headers: Record<string, string>;
 }): Promise<number | null> {
-  const result = await query<{ id: string }>(
-    INSERT_EVENT_SQL,
-    [input.sourceId, input.dedupKey, input.rawBody, JSON.stringify(input.headers)],
-  );
+  return insertEventWithDeliveries(input, []);
+}
 
-  return result.rows[0] ? Number(result.rows[0].id) : null;
+export async function insertEventWithDeliveries(
+  input: {
+    sourceId: string;
+    dedupKey: string | null;
+    rawBody: Buffer;
+    headers: Record<string, string>;
+  },
+  destinationIds: string[],
+): Promise<number | null> {
+  return withTransaction(async (client) => {
+    const result = await client.query<{ id: string }>(
+      `INSERT INTO events (source_id, dedup_key, raw_body, headers)
+       VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (source_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [input.sourceId, input.dedupKey, input.rawBody, JSON.stringify(input.headers)],
+    );
+
+    const eventId = result.rows[0] ? Number(result.rows[0].id) : null;
+    if (eventId !== null) {
+      await insertDeliveries(client, eventId, destinationIds);
+    }
+    return eventId;
+  });
 }
 
 export async function markSucceeded(eventId: string | number): Promise<void> {
