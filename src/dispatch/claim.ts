@@ -1,39 +1,49 @@
 import { query } from "../db/pool.js";
 
-export interface ClaimedEvent {
-  id: string;
-  source_id: string;
-  dedup_key: string | null;
-  raw_body: Buffer;
-  headers: Record<string, string>;
+export interface ClaimedDelivery {
+  delivery_id: string;
+  event_id: string;
+  destination_id: string;
+  body: Buffer | null;
   status: string;
   attempts: number;
   next_retry_at: Date;
   locked_at: Date;
   created_at: Date;
+  source_id: string;
+  raw_body: Buffer;
+  headers: Record<string, string>;
 }
 
-export async function claimEvents(batchSize = 20): Promise<ClaimedEvent[]> {
-  const result = await query<ClaimedEvent>(
+export type ClaimedEvent = ClaimedDelivery;
+
+export async function claimDeliveries(batchSize = 20): Promise<ClaimedDelivery[]> {
+  const result = await query<ClaimedDelivery>(
     `WITH candidates AS (
        SELECT id
-       FROM events
+       FROM deliveries
        WHERE status = 'pending' AND next_retry_at <= now()
        ORDER BY next_retry_at, id
        FOR UPDATE SKIP LOCKED
        LIMIT $1
      ), claimed AS (
-       UPDATE events AS events
-       SET status = 'running', locked_at = now(), attempts = events.attempts + 1
+       UPDATE deliveries AS deliveries
+       SET status = 'running', locked_at = now(), attempts = deliveries.attempts + 1
        FROM candidates
-       WHERE events.id = candidates.id
-       RETURNING events.*
+       WHERE deliveries.id = candidates.id
+       RETURNING deliveries.id AS delivery_id, deliveries.event_id,
+                 deliveries.destination_id, deliveries.body, deliveries.status,
+                 deliveries.attempts, deliveries.next_retry_at,
+                 deliveries.locked_at, deliveries.created_at
      )
-     SELECT *
+     SELECT claimed.*, events.source_id, events.raw_body, events.headers
      FROM claimed
-     ORDER BY next_retry_at, id`,
+     JOIN events ON events.id = claimed.event_id
+     ORDER BY claimed.next_retry_at, claimed.delivery_id`,
     [batchSize],
   );
 
   return result.rows;
 }
+
+export const claimEvents = claimDeliveries;

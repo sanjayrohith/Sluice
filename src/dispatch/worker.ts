@@ -1,9 +1,9 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
-import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/events.js";
+import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/deliveries.js";
 import { recordAttempt } from "../db/repositories/attempts.js";
 import { buildForwardedHeaders, deliver, type DeliveryResult } from "./deliver.js";
-import { claimEvents, type ClaimedEvent } from "./claim.js";
+import { claimDeliveries, type ClaimedDelivery } from "./claim.js";
 import { createDestinationResolver } from "./destinations.js";
 import { calculateBackoff, retryAfterDelayMs } from "./backoff.js";
 import { classifyOutcome } from "./outcome.js";
@@ -19,7 +19,7 @@ export interface WorkerOptions {
   backoffBaseMs?: number;
   backoffCapMs?: number;
   lockTimeoutMs?: number;
-  claim?: (batchSize: number) => Promise<ClaimedEvent[]>;
+  claim?: (batchSize: number) => Promise<ClaimedDelivery[]>;
   deliver?: typeof deliver;
 }
 
@@ -45,7 +45,7 @@ export class DispatcherWorker {
       "batchSize" | "pollIntervalMs" | "maxAttempts" | "backoffBaseMs" | "backoffCapMs" | "lockTimeoutMs"
     >
   >;
-  private readonly claim;
+  private readonly claim: (batchSize: number) => Promise<ClaimedDelivery[]>;
   private readonly send;
   private readonly concurrencyLimiter: DestinationConcurrencyLimiter;
   private readonly rateLimiter: DestinationRateLimiter;
@@ -61,7 +61,7 @@ export class DispatcherWorker {
       backoffCapMs: options.backoffCapMs ?? 6 * 60 * 60 * 1_000,
       lockTimeoutMs: options.lockTimeoutMs ?? 5 * 60 * 1_000,
     };
-    this.claim = options.claim ?? claimEvents;
+    this.claim = options.claim ?? claimDeliveries;
     this.send = options.deliver ?? deliver;
     this.concurrencyLimiter = new DestinationConcurrencyLimiter(
       new Map(
@@ -100,18 +100,15 @@ export class DispatcherWorker {
     this.wakeWaiter = undefined;
   }
 
-  private async processEvent(event: ClaimedEvent): Promise<void> {
-    const source = this.resolveSource(event.source_id);
-    const results = await Promise.all(
-      source.destinations.map((destinationId) => this.processDestination(event, destinationId)),
-    );
+  private async processEvent(event: ClaimedDelivery): Promise<void> {
+    const results = [await this.processDestination(event, event.destination_id)];
 
     const outcomes = results.map(classifyOutcome);
     const succeeded = outcomes.every((outcome) => outcome === "success");
     if (succeeded) {
-      await markSucceeded(event.id);
+      await markSucceeded(event.delivery_id);
     } else if (shouldDeadLetter(outcomes, event.attempts, this.options.maxAttempts)) {
-      await markDead(event.id, failureReason(results[outcomes.indexOf("permanent")]));
+      await markDead(event.delivery_id, failureReason(results[outcomes.indexOf("permanent")]));
     } else if (
       outcomes.some((outcome) => outcome === "retryable") &&
       event.attempts < this.options.maxAttempts
@@ -121,7 +118,7 @@ export class DispatcherWorker {
         .map((result) => retryAfterDelayMs(result.headers, Date.now(), this.options.backoffCapMs))
         .find((delay) => delay !== null);
       await scheduleRetry(
-        event.id,
+        event.delivery_id,
         retryAfter ??
           calculateBackoff(event.attempts, {
             baseMs: this.options.backoffBaseMs,
@@ -129,28 +126,28 @@ export class DispatcherWorker {
           }),
       );
     } else {
-      await markDead(event.id, failureReason(results[0]));
+      await markDead(event.delivery_id, failureReason(results[0]));
     }
   }
 
-  private async processDestination(event: ClaimedEvent, destinationId: string): Promise<DeliveryResult> {
+  private async processDestination(event: ClaimedDelivery, destinationId: string): Promise<DeliveryResult> {
     await this.rateLimiter.take(destinationId);
     const release = await this.concurrencyLimiter.acquire(destinationId);
     try {
       const destination = this.resolveDestination(destinationId);
       const requestHeaders = buildForwardedHeaders(event.headers, {
-        eventId: event.id,
+        eventId: event.event_id,
         attempt: event.attempts,
         source: event.source_id,
       });
       const result = await this.send({
         url: destination.url,
-        body: event.raw_body,
+        body: event.body ?? event.raw_body,
         headers: requestHeaders,
         timeoutMs: destination.timeout_ms,
       });
       await recordAttempt({
-        eventId: event.id,
+        eventId: event.event_id,
         attemptNumber: event.attempts,
         destinationId,
         requestHeaders,
@@ -164,16 +161,6 @@ export class DispatcherWorker {
     } finally {
       release();
     }
-  }
-
-  private resolveSource(sourceId: string) {
-    const source = [...this.sourcesConfig.sources.values()].find(
-      (candidate) => candidate.id === sourceId,
-    );
-    if (!source) {
-      throw new Error(`Unknown source: ${sourceId}`);
-    }
-    return source;
   }
 
   private waitForWork(): Promise<void> {
