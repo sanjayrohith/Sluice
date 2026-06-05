@@ -1,6 +1,7 @@
 import { loadEnv } from "../config/env.js";
 import type { SourcesConfig } from "../config/sources.js";
 import { markDead, markSucceeded, scheduleRetry } from "../db/repositories/deliveries.js";
+import { syncEventStatus } from "../db/repositories/events.js";
 import { recordAttempt } from "../db/repositories/attempts.js";
 import { buildForwardedHeaders, deliver, type DeliveryResult } from "./deliver.js";
 import { claimDeliveries, type ClaimedDelivery } from "./claim.js";
@@ -21,6 +22,7 @@ export interface WorkerOptions {
   lockTimeoutMs?: number;
   claim?: (batchSize: number) => Promise<ClaimedDelivery[]>;
   deliver?: typeof deliver;
+  syncEventStatus?: typeof syncEventStatus;
 }
 
 export function shouldDeadLetter(
@@ -47,6 +49,7 @@ export class DispatcherWorker {
   >;
   private readonly claim: (batchSize: number) => Promise<ClaimedDelivery[]>;
   private readonly send;
+  private readonly syncStatus: typeof syncEventStatus;
   private readonly concurrencyLimiter: DestinationConcurrencyLimiter;
   private readonly rateLimiter: DestinationRateLimiter;
 
@@ -63,6 +66,7 @@ export class DispatcherWorker {
     };
     this.claim = options.claim ?? claimDeliveries;
     this.send = options.deliver ?? deliver;
+    this.syncStatus = options.syncEventStatus ?? syncEventStatus;
     this.concurrencyLimiter = new DestinationConcurrencyLimiter(
       new Map(
         [...options.sourcesConfig.destinations].map(([id, destination]) => [id, destination.concurrency]),
@@ -107,10 +111,12 @@ export class DispatcherWorker {
     const succeeded = outcomes.every((outcome) => outcome === "success");
     if (succeeded) {
       await markSucceeded(event.delivery_id);
+      await this.syncStatus(event.event_id);
     } else if (shouldDeadLetter(outcomes, event.attempts, this.options.maxAttempts)) {
       const permanentIndex = outcomes.indexOf("permanent");
       const deadResult = permanentIndex >= 0 ? results[permanentIndex] : results[0];
       await markDead(event.delivery_id, failureReason(deadResult));
+      await this.syncStatus(event.event_id);
     } else if (
       outcomes.some((outcome) => outcome === "retryable") &&
       event.attempts < this.options.maxAttempts
@@ -129,6 +135,7 @@ export class DispatcherWorker {
       );
     } else {
       await markDead(event.delivery_id, failureReason(results[0]));
+      await this.syncStatus(event.event_id);
     }
   }
 

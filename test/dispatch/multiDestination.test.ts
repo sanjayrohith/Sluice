@@ -5,6 +5,7 @@ import { DispatcherWorker } from "../../src/dispatch/worker.js";
 import type { ClaimedDelivery } from "../../src/dispatch/claim.js";
 import * as deliveriesRepo from "../../src/db/repositories/deliveries.js";
 import * as attemptsRepo from "../../src/db/repositories/attempts.js";
+import * as eventsRepo from "../../src/db/repositories/events.js";
 
 describe("multi-destination delivery lifecycle and retry independence", () => {
   const sourcesConfig = parseSourcesConfig({
@@ -25,6 +26,7 @@ describe("multi-destination delivery lifecycle and retry independence", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(attemptsRepo, "recordAttempt").mockResolvedValue();
+    vi.spyOn(eventsRepo, "syncEventStatus").mockResolvedValue("pending");
   });
 
   afterEach(() => {

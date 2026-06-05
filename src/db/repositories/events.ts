@@ -45,6 +45,8 @@ export async function markSucceeded(eventId: string | number): Promise<void> {
   );
 }
 
+export const markCompleted = markSucceeded;
+
 export async function scheduleRetry(eventId: string | number, delayMs: number): Promise<void> {
   await query(
     `UPDATE events
@@ -63,4 +65,43 @@ export async function markDead(eventId: string | number, failedReason: string): 
      WHERE id = $1 AND status = 'running'`,
     [eventId, failedReason],
   );
+}
+
+export async function syncEventStatus(eventId: string | number): Promise<string | null> {
+  const result = await query<{ status: string }>(
+    "SELECT status FROM deliveries WHERE event_id = $1",
+    [eventId],
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  const statuses = result.rows.map((row) => row.status);
+  const allSucceeded = statuses.every((status) => status === "succeeded");
+  const nonePendingOrRunning = statuses.every(
+    (status) => status !== "pending" && status !== "running",
+  );
+
+  if (allSucceeded) {
+    await query(
+      `UPDATE events
+       SET status = 'succeeded', completed_at = now(), locked_at = NULL
+       WHERE id = $1`,
+      [eventId],
+    );
+    return "succeeded";
+  }
+
+  if (nonePendingOrRunning) {
+    await query(
+      `UPDATE events
+       SET status = 'dead', failed_reason = 'deliveries_failed', locked_at = NULL
+       WHERE id = $1`,
+      [eventId],
+    );
+    return "dead";
+  }
+
+  return "pending";
 }
