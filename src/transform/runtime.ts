@@ -1,5 +1,6 @@
 import { getQuickJS } from "quickjs-emscripten";
 import { TransformMemoryError, TransformTimeoutError } from "./errors.js";
+import { installSandboxGlobals } from "./globals.js";
 
 export interface TransformRuntimeOptions {
   timeoutMs?: number;
@@ -14,6 +15,7 @@ export async function evaluateTransform(
   const quickJs = await getQuickJS();
   const runtime = quickJs.newRuntime();
   const context = runtime.newContext();
+  installSandboxGlobals(context);
   const deadline = performance.now() + (options.timeoutMs ?? 100);
   let timedOut = false;
   runtime.setMemoryLimit(options.memoryLimitBytes ?? 16 * 1024 * 1024);
