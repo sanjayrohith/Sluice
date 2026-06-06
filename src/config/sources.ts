@@ -18,6 +18,7 @@ const sourceSchema = z.object({
   dedup_path: z.string().min(1).optional(),
   destinations: z.array(z.string().min(1)).default([]),
   max_body_bytes: z.number().int().positive().optional(),
+  transform: z.string().min(1).optional(),
 });
 
 const configSchema = z.object({
