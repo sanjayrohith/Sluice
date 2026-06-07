@@ -67,6 +67,28 @@ export async function markDead(eventId: string | number, failedReason: string): 
   );
 }
 
+export async function markFiltered(eventId: string | number): Promise<void> {
+  await query(
+    `UPDATE events
+     SET status = 'filtered', failed_reason = NULL, locked_at = NULL
+     WHERE id = $1 AND status = 'pending'`,
+    [eventId],
+  );
+}
+
+export async function markQuarantined(
+  eventId: string | number,
+  failedReason: string,
+): Promise<void> {
+  await query(
+    `UPDATE events
+     SET status = 'quarantined', failed_reason = $2, locked_at = NULL
+     WHERE id = $1 AND status = 'pending'`,
+    [eventId, failedReason],
+  );
+}
+
+
 export async function syncEventStatus(eventId: string | number): Promise<string | null> {
   const result = await query<{ status: string }>(
     "SELECT status FROM deliveries WHERE event_id = $1",

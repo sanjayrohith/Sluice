@@ -10,6 +10,8 @@ import { insertEventWithDeliveries } from "../../db/repositories/events.js";
 import { extractDedupKey } from "../../ingress/dedupKey.js";
 import { normalizeHeaders } from "../../ingress/headers.js";
 import { logDomainEvent } from "../../lib/events.js";
+import { TransformRegistry } from "../../transform/registry.js";
+import { runTransformPipeline } from "../../ingress/pipeline.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
 import "../../verify/providers/stripe.js";
@@ -23,10 +25,12 @@ export function registerIngressRoutes(
   config = tryLoadSources(),
 ): void {
   const toleranceSeconds = loadEnv().SIGNATURE_TOLERANCE_SECONDS;
+  const transformRegistry = config ? new TransformRegistry(config) : undefined;
 
   app.post<{ Params: IngressParams }>("/in/:source_id", async (request, reply) => {
-    const source = config?.sources.get(request.params.source_id);
-    if (!source) {
+    const activeConfig = config;
+    const source = activeConfig?.sources.get(request.params.source_id);
+    if (!activeConfig || !source) {
       return reply.code(404).send({ error: "unknown_source" });
     }
 
@@ -56,12 +60,26 @@ export function registerIngressRoutes(
       return reply.code(401).send({ error: result.reason });
     }
 
-    const eventId = await insertEventWithDeliveries({
-      sourceId: source.id,
-      dedupKey: extractDedupKey(request.rawBody, source.dedup_path),
-      rawBody: request.rawBody,
-      headers,
-    }, source.destinations);
+    const eventId = await insertEventWithDeliveries(
+      {
+        sourceId: source.id,
+        dedupKey: extractDedupKey(request.rawBody, source.dedup_path),
+        rawBody: request.rawBody,
+        headers,
+      },
+      source.transform ? [] : source.destinations,
+    );
+    if (eventId !== null && source.transform && transformRegistry) {
+      await runTransformPipeline({
+        eventId,
+        sourceId: source.id,
+        rawBody: request.rawBody,
+        headers,
+        configuredDestinations: source.destinations,
+        config: activeConfig,
+        registry: transformRegistry,
+      });
+    }
     logDomainEvent(
       eventId === null ? "ingress.duplicate" : "ingress.accepted",
       {
