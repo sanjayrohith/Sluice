@@ -45,3 +45,8 @@ export function resolveTransformDestinations(
   return selected;
 }
 
+export function serializeTransformBody(body: unknown): Buffer {
+  return Buffer.from(JSON.stringify(body));
+}
+
+
