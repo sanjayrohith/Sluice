@@ -31,3 +31,17 @@ export function validateTransformResult(value: unknown): TransformResult {
     },
   };
 }
+
+export function resolveTransformDestinations(
+  destinations: string[] | undefined,
+  configured: ReadonlyMap<string, unknown>,
+): string[] {
+  const selected = destinations ?? [...configured.keys()];
+  for (const destination of selected) {
+    if (!configured.has(destination)) {
+      throw new Error(`transform references unknown destination ${destination}`);
+    }
+  }
+  return selected;
+}
+
