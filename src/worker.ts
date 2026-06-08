@@ -1,6 +1,7 @@
 import { loadSourcesConfig } from "./config/sources.js";
 import { DispatcherWorker } from "./dispatch/worker.js";
 import { loadEnv } from "./config/env.js";
+import { pool } from "./db/pool.js";
 
 const env = loadEnv();
 const worker = new DispatcherWorker({
@@ -23,3 +24,4 @@ const stopping = new Promise<void>((resolve) => {
 });
 
 await Promise.race([worker.run(), stopping]);
+await pool.end();
