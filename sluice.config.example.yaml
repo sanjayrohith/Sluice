@@ -8,11 +8,20 @@ sources:
     provider: stripe
     secret_env: STRIPE_WEBHOOK_SECRET
     dedup_path: $.id
-    destinations: []
+    transform: transforms/stripe-invoice-paid.js
+    destinations: [billing, analytics]
   - id: razorpay
     provider: razorpay
     secret_env: RAZORPAY_WEBHOOK_SECRET
     dedup_path: $.payload.payment.entity.id
     destinations: []
 
-destinations: []
+destinations:
+  - id: billing
+    url: http://billing:8080/webhooks/stripe
+    concurrency: 10
+    rps: 20
+  - id: analytics
+    url: http://analytics:8080/events
+    concurrency: 10
+    rps: 20
