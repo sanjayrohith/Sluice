@@ -1,3 +1,4 @@
+import { initializeTracing } from "./otel/tracing.js";
 import { logger } from "./lib/logger.js";
 import { loadEnv } from "./config/env.js";
 import { checkDb } from "./db/health.js";
@@ -5,6 +6,7 @@ import { runMigrations } from "./db/migrate.js";
 import { query } from "./db/pool.js";
 import { buildServer } from "./http/server.js";
 
+initializeTracing("ingress");
 const env = loadEnv();
 
 await runMigrations();

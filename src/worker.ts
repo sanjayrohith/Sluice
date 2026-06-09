@@ -1,8 +1,10 @@
+import { initializeTracing } from "./otel/tracing.js";
 import { loadSourcesConfig } from "./config/sources.js";
 import { DispatcherWorker } from "./dispatch/worker.js";
 import { loadEnv } from "./config/env.js";
 import { pool } from "./db/pool.js";
 
+initializeTracing("worker");
 const env = loadEnv();
 const worker = new DispatcherWorker({
   sourcesConfig: loadSourcesConfig(),

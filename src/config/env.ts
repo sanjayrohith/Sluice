@@ -15,6 +15,10 @@ const envSchema = z.object({
   MAX_ATTEMPTS: z.coerce.number().int().positive().default(12),
   LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(5 * 60 * 1_000),
   ADMIN_TOKEN: z.string().min(1),
+  OTEL_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
