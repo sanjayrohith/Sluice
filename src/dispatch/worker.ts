@@ -12,6 +12,10 @@ import { reapStaleEvents } from "./reaper.js";
 import { DestinationConcurrencyLimiter } from "./limiters/concurrency.js";
 import { DestinationRateLimiter } from "./limiters/rateLimit.js";
 import { withDeliverySpan } from "../otel/propagation.js";
+import {
+  annotateDeliverySpan,
+  deliverySpanAttributes,
+} from "../otel/attributes.js";
 
 export interface WorkerOptions {
   sourcesConfig: SourcesConfig;
@@ -111,12 +115,22 @@ export class DispatcherWorker {
         traceparent: event.traceparent ?? undefined,
         tracestate: event.tracestate ?? undefined,
       },
-      () => this.processEventInSpan(event),
+      deliverySpanAttributes({
+        eventId: event.event_id,
+        sourceId: event.source_id,
+        destinationId: event.destination_id,
+        attempt: event.attempts,
+      }),
+      (span) => this.processEventInSpan(event, span),
     );
   }
 
-  private async processEventInSpan(event: ClaimedDelivery): Promise<void> {
+  private async processEventInSpan(
+    event: ClaimedDelivery,
+    span: import("@opentelemetry/api").Span,
+  ): Promise<void> {
     const results = [await this.processDestination(event, event.destination_id)];
+    annotateDeliverySpan(span, results[0]);
 
     const outcomes = results.map(classifyOutcome);
     const succeeded = outcomes.every((outcome) => outcome === "success");

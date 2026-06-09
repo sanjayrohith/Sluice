@@ -58,19 +58,19 @@ export function getParentSpanContext(
 
 export async function withDeliverySpan<T>(
   fields: TraceContextFields,
+  attributes: Record<string, string | number>,
   callback: (span: Span) => Promise<T>,
 ): Promise<T> {
   const parentContext = extractTraceContext(fields);
   const parentSpanContext = getParentSpanContext(parentContext);
-  const span = trace
-    .getTracer("sluice")
-    .startSpan(
-      "sluice.delivery",
-      parentSpanContext
-        ? { links: [{ context: parentSpanContext }] }
-        : undefined,
-      parentContext,
-    );
+  const span = trace.getTracer("sluice").startSpan(
+    "sluice.delivery",
+    {
+      attributes,
+      links: parentSpanContext ? [{ context: parentSpanContext }] : [],
+    },
+    parentContext,
+  );
 
   return context.with(trace.setSpan(parentContext, span), async () => {
     try {

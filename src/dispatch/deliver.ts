@@ -1,4 +1,5 @@
 import { request } from "undici";
+import { injectTraceContext } from "../otel/propagation.js";
 
 const BODY_SNIPPET_BYTES = 64 * 1024;
 
@@ -45,7 +46,7 @@ export function buildForwardedHeaders(
   headers["x-sluice-event-id"] = String(metadata.eventId);
   headers["x-sluice-attempt"] = String(metadata.attempt);
   headers["x-sluice-source"] = metadata.source;
-  return headers;
+  return injectTraceContext(headers);
 }
 
 export async function deliver(input: DeliveryInput): Promise<DeliveryResult> {
