@@ -11,6 +11,7 @@ import { classifyOutcome } from "./outcome.js";
 import { reapStaleEvents } from "./reaper.js";
 import { DestinationConcurrencyLimiter } from "./limiters/concurrency.js";
 import { DestinationRateLimiter } from "./limiters/rateLimit.js";
+import { withDeliverySpan } from "../otel/propagation.js";
 
 export interface WorkerOptions {
   sourcesConfig: SourcesConfig;
@@ -105,6 +106,16 @@ export class DispatcherWorker {
   }
 
   private async processEvent(event: ClaimedDelivery): Promise<void> {
+    await withDeliverySpan(
+      {
+        traceparent: event.traceparent ?? undefined,
+        tracestate: event.tracestate ?? undefined,
+      },
+      () => this.processEventInSpan(event),
+    );
+  }
+
+  private async processEventInSpan(event: ClaimedDelivery): Promise<void> {
     const results = [await this.processDestination(event, event.destination_id)];
 
     const outcomes = results.map(classifyOutcome);

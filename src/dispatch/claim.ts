@@ -13,6 +13,8 @@ export interface ClaimedDelivery {
   source_id: string;
   raw_body: Buffer;
   headers: Record<string, string>;
+  traceparent: string | null;
+  tracestate: string | null;
 }
 
 export type ClaimedEvent = ClaimedDelivery;
@@ -36,7 +38,8 @@ export async function claimDeliveries(batchSize = 20): Promise<ClaimedDelivery[]
                  deliveries.attempts, deliveries.next_retry_at,
                  deliveries.locked_at, deliveries.created_at
      )
-     SELECT claimed.*, events.source_id, events.raw_body, events.headers
+     SELECT claimed.*, events.source_id, events.raw_body, events.headers,
+            events.traceparent, events.tracestate
      FROM claimed
      JOIN events ON events.id = claimed.event_id
      ORDER BY claimed.next_retry_at, claimed.delivery_id`,

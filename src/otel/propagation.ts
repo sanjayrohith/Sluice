@@ -4,6 +4,7 @@ import {
   ROOT_CONTEXT,
   trace,
   type Context,
+  type Span,
 } from "@opentelemetry/api";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 
@@ -53,4 +54,29 @@ export function getParentSpanContext(
   return spanContext && trace.isSpanContextValid(spanContext)
     ? spanContext
     : undefined;
+}
+
+export async function withDeliverySpan<T>(
+  fields: TraceContextFields,
+  callback: (span: Span) => Promise<T>,
+): Promise<T> {
+  const parentContext = extractTraceContext(fields);
+  const parentSpanContext = getParentSpanContext(parentContext);
+  const span = trace
+    .getTracer("sluice")
+    .startSpan(
+      "sluice.delivery",
+      parentSpanContext
+        ? { links: [{ context: parentSpanContext }] }
+        : undefined,
+      parentContext,
+    );
+
+  return context.with(trace.setSpan(parentContext, span), async () => {
+    try {
+      return await callback(span);
+    } finally {
+      span.end();
+    }
+  });
 }
