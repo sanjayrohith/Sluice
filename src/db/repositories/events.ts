@@ -6,6 +6,8 @@ export async function insertEvent(input: {
   dedupKey: string | null;
   rawBody: Buffer;
   headers: Record<string, string>;
+  traceparent?: string;
+  tracestate?: string;
 }): Promise<number | null> {
   return insertEventWithDeliveries(input, []);
 }
@@ -16,16 +18,25 @@ export async function insertEventWithDeliveries(
     dedupKey: string | null;
     rawBody: Buffer;
     headers: Record<string, string>;
+    traceparent?: string;
+    tracestate?: string;
   },
   destinationIds: string[],
 ): Promise<number | null> {
   return withTransaction(async (client) => {
     const result = await client.query<{ id: string }>(
-      `INSERT INTO events (source_id, dedup_key, raw_body, headers)
-       VALUES ($1, $2, $3, $4::jsonb)
+      `INSERT INTO events (source_id, dedup_key, raw_body, headers, traceparent, tracestate)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
        ON CONFLICT (source_id, dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING
        RETURNING id`,
-      [input.sourceId, input.dedupKey, input.rawBody, JSON.stringify(input.headers)],
+      [
+        input.sourceId,
+        input.dedupKey,
+        input.rawBody,
+        JSON.stringify(input.headers),
+        input.traceparent ?? null,
+        input.tracestate ?? null,
+      ],
     );
 
     const eventId = result.rows[0] ? Number(result.rows[0].id) : null;

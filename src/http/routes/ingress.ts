@@ -12,6 +12,7 @@ import { normalizeHeaders } from "../../ingress/headers.js";
 import { logDomainEvent } from "../../lib/events.js";
 import { TransformRegistry } from "../../transform/registry.js";
 import { runTransformPipeline } from "../../ingress/pipeline.js";
+import { serializeTraceContext } from "../../otel/propagation.js";
 import "../../verify/providers/github.js";
 import "../../verify/providers/razorpay.js";
 import "../../verify/providers/stripe.js";
@@ -66,6 +67,7 @@ export function registerIngressRoutes(
         dedupKey: extractDedupKey(request.rawBody, source.dedup_path),
         rawBody: request.rawBody,
         headers,
+        ...serializeTraceContext(),
       },
       source.transform ? [] : source.destinations,
     );
